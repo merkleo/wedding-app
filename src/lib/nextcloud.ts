@@ -42,7 +42,7 @@ export async function uploadFile(filename: string, data: Buffer, contentType: st
   const res = await fetch(davUrl(filename), {
     method: "PUT",
     headers: { Authorization: authHeader(), "Content-Type": contentType },
-    body: data,
+    body: new Uint8Array(data),
   });
   if (!res.ok) {
     const text = await res.text();

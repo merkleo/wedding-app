@@ -1,0 +1,14 @@
+services:
+  wedding-photos:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NEXTCLOUD_URL:      ${NEXTCLOUD_URL}
+      NEXTCLOUD_USERNAME: ${NEXTCLOUD_USERNAME}
+      NEXTCLOUD_APP_TOKEN: ${NEXTCLOUD_APP_TOKEN}
+      NEXTCLOUD_FOLDER:   ${NEXTCLOUD_FOLDER:-fotos-boda}
+      APP_URL:            ${APP_URL:-http://localhost:3000}
+      COUPLE_NAMES:       ${COUPLE_NAMES:-Los Novios}
+      WEDDING_DATE:       ${WEDDING_DATE:-}
+    restart: unless-stopped

@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  /* Colors */
+  --color-cream:      #FDF8F0;
+  --color-gold:       #C9A84C;
+  --color-gold-light: #E8D5A3;
+  --color-rose:       #E8B4B8;
+  --color-warm-brown: #8B7355;
+  --color-dark:       #2C2C2C;
+
+  /* Font families — reference CSS vars injected by next/font */
+  --font-playfair: var(--playfair-font), Georgia, "Times New Roman", serif;
+  --font-lato:     var(--lato-font), system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: #FDF8F0;
+  background-image:
+    radial-gradient(ellipse at 15% 40%, rgba(232, 180, 184, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 85% 15%, rgba(201, 168, 76, 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 90%, rgba(232, 180, 184, 0.06) 0%, transparent 50%);
+}

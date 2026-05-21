@@ -266,3 +266,13 @@ export async function processPolaroid(
     .webp({ quality: 82 })
     .toBuffer();
 }
+
+// ─── Thumbnail (sin marco Polaroid, cuadrado 400×400) ─────────────────────────
+
+export async function generateThumbnail(input: Buffer): Promise<Buffer> {
+  return sharp(input)
+    .rotate()                                             // respeta EXIF
+    .resize(400, 400, { fit: "cover", position: "centre" })
+    .webp({ quality: 70 })
+    .toBuffer();
+}

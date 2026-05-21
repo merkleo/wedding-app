@@ -7,6 +7,7 @@ const NC_FOLDER   = () => process.env.NEXTCLOUD_FOLDER || "fotos-boda";
 
 export interface Photo {
   filename: string;
+  thumbFilename?: string;   // {ts}-{rnd}.thumb.webp  (existe si fue subida con thumbnail)
   uploadedAt: string;
   message?: string;
   contentType: string;
@@ -82,9 +83,10 @@ export async function listPhotos(): Promise<Photo[]> {
   const raw       = parsed["d:multistatus"]?.["d:response"] ?? [];
   const responses = Array.isArray(raw) ? raw : [raw];
 
-  const imageRe = /\.(jpe?g|png|gif|webp|heic|heif|avif)$/i;
-  const imageFiles: Photo[]      = [];
-  const metaSet: Set<string>     = new Set();
+  const imageRe   = /\.(jpe?g|png|gif|webp|heic|heif|avif)$/i;
+  const imageFiles: Photo[]  = [];
+  const metaSet: Set<string> = new Set();
+  const thumbSet: Set<string>= new Set();
 
   for (const r of responses) {
     const href        = (r["d:href"]?.[0] ?? "") as string;
@@ -99,10 +101,9 @@ export async function listPhotos(): Promise<Photo[]> {
     const lastMod     = (prop["d:getlastmodified"]?.[0] ?? "") as string;
     const size        = parseInt(prop["d:getcontentlength"]?.[0] ?? "0");
 
-    if (filename.endsWith(".meta.json")) {
-      metaSet.add(filename);
-      continue;
-    }
+    // Sidecars: skip but index them
+    if (filename.endsWith(".meta.json"))  { metaSet.add(filename);  continue; }
+    if (filename.endsWith(".thumb.webp")) { thumbSet.add(filename); continue; }
     if (!imageRe.test(filename)) continue;
 
     imageFiles.push({
@@ -118,21 +119,31 @@ export async function listPhotos(): Promise<Photo[]> {
     new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
   );
 
-  // Fetch meta only for photos that have a known sidecar
+  // Enrich each photo with thumbnail + optional meta
   return Promise.all(
     imageFiles.map(async (photo) => {
+      // Thumbnail companion: {ts}-{rnd}.thumb.webp
+      const thumbName    = photo.filename.replace(/\.webp$/i, ".thumb.webp");
+      const thumbFilename= thumbSet.has(thumbName) ? thumbName : undefined;
+
+      // Meta sidecar
       const metaName = `${photo.filename}.meta.json`;
-      if (!metaSet.has(metaName)) return photo;
+      if (!metaSet.has(metaName)) return { ...photo, thumbFilename };
       try {
         const metaRes = await fetch(davUrl(metaName), {
           headers: { Authorization: authHeader() },
         });
         if (metaRes.ok) {
           const meta = await metaRes.json() as { message?: string; uploadedAt?: string };
-          return { ...photo, message: meta.message, uploadedAt: meta.uploadedAt ?? photo.uploadedAt };
+          return {
+            ...photo,
+            thumbFilename,
+            message:    meta.message,
+            uploadedAt: meta.uploadedAt ?? photo.uploadedAt,
+          };
         }
       } catch { /* no meta */ }
-      return photo;
+      return { ...photo, thumbFilename };
     })
   );
 }

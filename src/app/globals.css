@@ -18,6 +18,16 @@ html {
   scroll-behavior: smooth;
 }
 
+/* ── Mosaic fade-in ─────────────────────────────────────────────────────────── */
+@keyframes mosaic-fade {
+  from { opacity: 0; transform: scale(1.04); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+
+.mosaic-fade {
+  animation: mosaic-fade 0.75s ease-in-out both;
+}
+
 body {
   background-color: #FDF8F0;
   background-image:

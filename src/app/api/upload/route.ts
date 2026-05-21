@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureFolder, uploadFile, uploadMeta } from "@/lib/nextcloud";
-import { processPolaroid } from "@/lib/imageProcessor";
+import { processPolaroid, generateThumbnail } from "@/lib/imageProcessor";
 
 const MAX_INPUT_SIZE = 50 * 1024 * 1024; // 50 MB (antes de comprimir)
 const ALLOW_TYPES = new Set([
@@ -40,7 +40,14 @@ export async function POST(req: NextRequest) {
       const rnd      = Math.random().toString(36).slice(2, 8);
       const filename = `${ts}-${rnd}.webp`;      // siempre WebP
 
-      await uploadFile(filename, processed, "image/webp");
+      // Thumbnail cuadrado 400×400 (sin marco Polaroid) para la galería
+      const thumb         = await generateThumbnail(raw);
+      const thumbFilename = `${ts}-${rnd}.thumb.webp`;
+
+      await Promise.all([
+        uploadFile(filename,      processed, "image/webp"),
+        uploadFile(thumbFilename, thumb,     "image/webp"),
+      ]);
 
       // Guardar el mensaje también como metadata (para el lightbox)
       if (message) await uploadMeta(filename, message);

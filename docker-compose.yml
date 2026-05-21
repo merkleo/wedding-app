@@ -11,4 +11,8 @@ services:
       APP_URL:            ${APP_URL:-http://localhost:3000}
       COUPLE_NAMES:       ${COUPLE_NAMES:-Los Novios}
       WEDDING_DATE:       ${WEDDING_DATE:-}
+      # Sharp usa libuv threadpool para operaciones nativas de imagen.
+      # Default = 4 hilos; con MAX_CONCURRENT=3 y 2 pipelines por foto,
+      # podemos necesitar hasta 6 hilos simultáneos → 16 da margen holgado.
+      UV_THREADPOOL_SIZE: "16"
     restart: unless-stopped

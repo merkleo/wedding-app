@@ -1,26 +1,18 @@
 # Stage 1 – Install dependencies
 FROM node:22-alpine AS deps
 WORKDIR /app
+RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json* ./
-# libc6-compat necesario para algunos binarios nativos (sharp) en Alpine
-RUN apk add --no-cache libc6-compat && \
-    if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # Stage 2 – Build
 FROM node:22-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN apk add --no-cache libc6-compat curl
+RUN apk add --no-cache libc6-compat
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Descargar fuente Dancing Script (para el efecto Polaroid)
-RUN mkdir -p /app/public/fonts && \
-    curl -fsSL \
-      "https://github.com/google/fonts/raw/main/ofl/dancingscript/static/DancingScript-Regular.ttf" \
-      -o /app/public/fonts/DancingScript-Regular.ttf
-
 RUN mkdir -p /app/public && npm run build
 
 # Stage 3 – Production runner

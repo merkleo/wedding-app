@@ -1,20 +1,11 @@
 import sharp from "sharp";
-import path from "path";
-import fs from "fs";
 
-// ─── Constantes ──────────────────────────────────────────────────────────────
+// ─── Constantes ───────────────────────────────────────────────────────────────
+const MAX_SIDE = 1414; // √2_000_000 ≈ 1414 → máx 2 MP en imágenes cuadradas
 
-const MAX_PIXELS = 2_000_000; // 2 MP
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Proporciones del marco Polaroid (relativas al ancho de la foto)
-const PAD_SIDE   = 0.07;   // 7 % a cada lado
-const PAD_TOP    = 0.07;   // 7 % arriba
-const PAD_BOTTOM_TEXT    = 0.30; // 30 % abajo (con mensaje)
-const PAD_BOTTOM_NO_TEXT = 0.22; // 22 % abajo (sin mensaje)
-
-// ─── Utilidades ──────────────────────────────────────────────────────────────
-
-function escapeXml(s: string) {
+function escapeXml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -23,12 +14,19 @@ function escapeXml(s: string) {
     .replace(/'/g, "&apos;");
 }
 
-/** Parte el texto en líneas que quepan en maxChars caracteres (máx. 3 líneas). */
+/** Elimina emojis — librsvg no los puede renderizar */
+function stripEmoji(s: string): string {
+  return s
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Parte el texto en líneas de máx maxChars caracteres (máx 3 líneas). */
 function wrapText(text: string, maxChars: number): string[] {
   const words = text.split(" ");
   const lines: string[] = [];
   let line = "";
-
   for (const word of words) {
     const candidate = line ? `${line} ${word}` : word;
     if (candidate.length <= maxChars) {
@@ -42,14 +40,17 @@ function wrapText(text: string, maxChars: number): string[] {
   return lines.slice(0, 3);
 }
 
-/** Lee la fuente Dancing Script y la retorna como base64 (se cachea en memoria). */
-let _fontB64: string | null = null;
-function getFontB64(): string {
-  if (!_fontB64) {
-    const fontPath = path.join(process.cwd(), "public", "fonts", "DancingScript-Regular.ttf");
-    _fontB64 = fs.readFileSync(fontPath).toString("base64");
-  }
-  return _fontB64;
+function formatDate(d: Date): string {
+  const date = d.toLocaleDateString("es-ES", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const time = d.toLocaleTimeString("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${date}  ·  ${time}`;
 }
 
 // ─── Pipeline principal ───────────────────────────────────────────────────────
@@ -58,43 +59,36 @@ export async function processPolaroid(
   input: Buffer,
   message?: string
 ): Promise<Buffer> {
+  const cleanMsg = message ? stripEmoji(message) : "";
 
-  // 1 ── Leer dimensiones originales
-  const meta  = await sharp(input).metadata();
-  const origW = meta.width  ?? 1000;
-  const origH = meta.height ?? 1000;
+  // ── 1. Rotar por EXIF + resize manteniendo proporción ─────────────────────
+  const { data: resizedBuf, info } = await sharp(input)
+    .rotate()   // auto-rota según metadatos EXIF (portrait/landscape correcto)
+    .resize(MAX_SIDE, MAX_SIDE, { fit: "inside", withoutEnlargement: true })
+    .toBuffer({ resolveWithObject: true });
 
-  // 2 ── Calcular dimensiones objetivo (máx 2 MP)
-  const currentMP = origW * origH;
-  let targetW = origW;
-  let targetH = origH;
-  if (currentMP > MAX_PIXELS) {
-    const scale = Math.sqrt(MAX_PIXELS / currentMP);
-    targetW = Math.round(origW * scale);
-    targetH = Math.round(origH * scale);
-  }
+  const W = info.width;   // ancho real tras resize
+  const H = info.height;  // alto  real tras resize
 
-  // 3 ── Resize + efecto Polaroid (color grade)
-  //   • modulate: ligeramente más brillante y desaturado (look "faded")
-  //   • recomb:   matriz cálida (boost rojo, reduce azul → tono película vintage)
-  //   • linear:   levanta las sombras → aspecto desteñido característico Polaroid
-  const graded = await sharp(input)
-    .resize(targetW, targetH, { fit: "fill" })
+  // ── 2. Color grade Polaroid ────────────────────────────────────────────────
+  //   recomb: matriz de color cálida (boost rojo, reduce azul)
+  //   linear: levanta las sombras → look "faded" de película
+  const graded = await sharp(resizedBuf)
     .modulate({ brightness: 1.06, saturation: 0.82 })
     .recomb([
       [1.07, 0.03, 0.01],
       [0.01, 0.99, 0.01],
       [0.00, 0.02, 0.93],
     ])
-    .linear(0.94, 12)           // output = 0.94·input + 12
+    .linear(0.94, 12)
     .toBuffer();
 
-  // 4 ── Viñeta (SVG radial gradient sobre la foto)
-  const vignetteSvg = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">
+  // ── 3. Viñeta ─────────────────────────────────────────────────────────────
+  const vignetteSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <radialGradient id="v" cx="50%" cy="50%" r="68%">
         <stop offset="0%"   stop-color="transparent"/>
-        <stop offset="100%" stop-color="rgba(18,8,4,0.38)"/>
+        <stop offset="100%" stop-color="rgba(18,8,4,0.36)"/>
       </radialGradient>
     </defs>
     <rect width="100%" height="100%" fill="url(#v)"/>
@@ -104,10 +98,14 @@ export async function processPolaroid(
     .composite([{ input: Buffer.from(vignetteSvg), blend: "over" }])
     .toBuffer();
 
-  // 5 ── Marco Polaroid (extend con fondo blanco cálido)
-  const padSide   = Math.round(targetW * PAD_SIDE);
-  const padTop    = Math.round(targetW * PAD_TOP);
-  const padBottom = Math.round(targetW * (message?.trim() ? PAD_BOTTOM_TEXT : PAD_BOTTOM_NO_TEXT));
+  // ── 4. Marco Polaroid ─────────────────────────────────────────────────────
+  //  El padding se calcula sobre el ancho real de la foto.
+  //  El borde inferior es siempre más ancho (área de escritura).
+  const padSide   = Math.max(55, Math.round(W * 0.07));
+  const padTop    = Math.max(55, Math.round(W * 0.07));
+  const padBottom = cleanMsg
+    ? Math.max(150, Math.round(W * 0.32))  // espacio para texto + fecha
+    : Math.max(100, Math.round(W * 0.20)); // solo fecha
 
   const framed = await sharp(withVignette)
     .extend({
@@ -119,59 +117,79 @@ export async function processPolaroid(
     })
     .toBuffer();
 
-  const framedW = targetW + padSide * 2;
-  const framedH = targetH + padTop + padBottom;
+  const FW = W + padSide * 2;          // ancho total del Polaroid
+  const FH = H + padTop + padBottom;   // alto  total del Polaroid
+  const areaTop = H + padTop;          // Y donde empieza el área inferior blanca
 
-  // 6 ── Texto a mano (sólo si hay mensaje)
-  if (message?.trim()) {
-    const fontB64 = getFontB64();
+  // ── 5. SVG overlay: texto + fecha ─────────────────────────────────────────
+  //  La fuente "Dancing Script" debe estar instalada en el sistema del contenedor
+  //  (ver Dockerfile). librsvg la resuelve por nombre via fontconfig.
+  const innerPad = Math.round(padBottom * 0.08);
+  const dateStr  = escapeXml(formatDate(new Date()));
 
-    // Calcular font-size y salto de línea proporcional al área inferior
-    const fontSize   = Math.round(padBottom * 0.21);
-    const lineHeight = Math.round(fontSize * 1.45);
+  let textNodes = "";
 
-    // Estimar caracteres por línea (Dancing Script ≈ 0.52 × fontSize por char)
-    const charsPerLine = Math.max(15, Math.floor(framedW / (fontSize * 0.52)));
-    const lines        = wrapText(message.trim(), charsPerLine);
+  if (cleanMsg) {
+    const msgFontSize  = Math.max(22, Math.round(padBottom * 0.19));
+    const lineHeight   = Math.round(msgFontSize * 1.50);
+    const charsPerLine = Math.max(10, Math.floor(FW / (msgFontSize * 0.56)));
+    const lines        = wrapText(cleanMsg, charsPerLine);
+    const msgBlockH    = lines.length * lineHeight;
 
-    // Centrar bloque de texto verticalmente en el área inferior
-    const blockH  = lines.length * lineHeight;
-    const baseY   = targetH + padTop + (padBottom - blockH) / 2 + fontSize * 0.75;
+    const dateFontSize = Math.max(14, Math.round(msgFontSize * 0.50));
 
-    const textElements = lines
+    // Espacio disponible para mensaje (dejando hueco fijo para la fecha abajo)
+    const dateZone  = dateFontSize + innerPad * 2;
+    const msgAreaH  = padBottom - dateZone;
+    const msgStartY = areaTop + (msgAreaH - msgBlockH) / 2 + msgFontSize * 0.85;
+
+    textNodes += lines
       .map((line, i) =>
         `<text
-          x="${framedW / 2}"
-          y="${Math.round(baseY + i * lineHeight)}"
-          font-family="DancingScript, cursive"
-          font-size="${fontSize}"
-          fill="#4a3f35"
+          x="${FW / 2}"
+          y="${Math.round(msgStartY + i * lineHeight)}"
+          font-family="Dancing Script, serif"
+          font-size="${msgFontSize}"
+          fill="#3d3028"
           text-anchor="middle"
         >${escapeXml(line)}</text>`
       )
       .join("\n");
 
-    const svgOverlay = `<svg
-      width="${framedW}"
-      height="${framedH}"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <defs>
-        <style>
-          @font-face {
-            font-family: 'DancingScript';
-            src: url('data:font/truetype;base64,${fontB64}');
-          }
-        </style>
-      </defs>
-      ${textElements}
-    </svg>`;
+    // Fecha centrada en la zona baja del marco
+    const dateY = FH - innerPad - dateFontSize * 0.2;
+    textNodes += `<text
+      x="${FW / 2}"
+      y="${dateY}"
+      font-family="Dancing Script, serif"
+      font-size="${dateFontSize}"
+      fill="#9a8270"
+      text-anchor="middle"
+    >${dateStr}</text>`;
 
-    return sharp(framed)
-      .composite([{ input: Buffer.from(svgOverlay), blend: "over" }])
-      .webp({ quality: 82 })
-      .toBuffer();
+  } else {
+    // Sin mensaje: solo la fecha centrada en el área inferior
+    const dateFontSize = Math.max(16, Math.round(padBottom * 0.20));
+    const dateY = areaTop + padBottom / 2 + dateFontSize * 0.35;
+
+    textNodes = `<text
+      x="${FW / 2}"
+      y="${dateY}"
+      font-family="Dancing Script, serif"
+      font-size="${dateFontSize}"
+      fill="#9a8270"
+      text-anchor="middle"
+    >${dateStr}</text>`;
   }
 
-  return sharp(framed).webp({ quality: 82 }).toBuffer();
+  const svgOverlay = `<svg
+    width="${FW}"
+    height="${FH}"
+    xmlns="http://www.w3.org/2000/svg"
+  >${textNodes}</svg>`;
+
+  return sharp(framed)
+    .composite([{ input: Buffer.from(svgOverlay), blend: "over" }])
+    .webp({ quality: 82 })
+    .toBuffer();
 }

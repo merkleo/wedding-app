@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureFolder, uploadFile, uploadMeta } from "@/lib/nextcloud";
+import { processPolaroid } from "@/lib/imageProcessor";
 
-const MAX_SIZE    = 25 * 1024 * 1024; // 25 MB
+const MAX_INPUT_SIZE = 50 * 1024 * 1024; // 50 MB (antes de comprimir)
 const ALLOW_TYPES = new Set([
   "image/jpeg", "image/png", "image/gif",
   "image/webp", "image/heic", "image/heif", "image/avif",
@@ -23,20 +24,25 @@ export async function POST(req: NextRequest) {
 
     for (const file of files) {
       if (!ALLOW_TYPES.has(file.type)) continue;
-      if (file.size > MAX_SIZE) {
+      if (file.size > MAX_INPUT_SIZE) {
         return NextResponse.json(
-          { error: `"${file.name}" supera los 25 MB permitidos` },
+          { error: `"${file.name}" supera los 50 MB permitidos` },
           { status: 400 }
         );
       }
 
-      const buf      = Buffer.from(await file.arrayBuffer());
+      const raw = Buffer.from(await file.arrayBuffer());
+
+      // Procesar: resize 2MP + efecto Polaroid + marco + texto → WebP
+      const processed = await processPolaroid(raw, message || undefined);
+
       const ts       = Date.now();
       const rnd      = Math.random().toString(36).slice(2, 8);
-      const ext      = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
-      const filename = `${ts}-${rnd}.${ext}`;
+      const filename = `${ts}-${rnd}.webp`;      // siempre WebP
 
-      await uploadFile(filename, buf, file.type);
+      await uploadFile(filename, processed, "image/webp");
+
+      // Guardar el mensaje también como metadata (para el lightbox)
       if (message) await uploadMeta(filename, message);
 
       uploaded.push(filename);

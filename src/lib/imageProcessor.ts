@@ -148,15 +148,37 @@ export async function processPolaroid(
     .composite([{ input: Buffer.from(vigSvg), blend: "over" }])
     .toBuffer();
 
-  // ── 4. Marco Polaroid ─────────────────────────────────────────────────────
-  // Los tamaños se basan en W (ancho de la foto) para escalar proporcionalmente
-  // sin importar si es portrait o landscape.
+  // ── 4. Medidas base (no dependen de padBottom) ────────────────────────────
   const padSide   = Math.max(55, Math.round(W * 0.07));
   const padTop    = Math.max(55, Math.round(W * 0.07));
-  const padBottom = cleanMsg
-    ? Math.max(220, Math.round(W * 0.44))  // espacio para sep + nombres + msg + fecha
-    : Math.max(160, Math.round(W * 0.28)); // espacio para sep + nombres + fecha
+  const FW        = W + padSide * 2;  // conocido antes de calcular padBottom
 
+  const ornPad    = Math.max(16, Math.round(padSide * 0.28));
+  const ornDSize  = Math.max(5,  Math.round(padSide * 0.12));
+  const ornArmLen = Math.max(18, Math.round(padSide * 0.55));
+  const innerPad  = Math.max(10, Math.round(W * 0.014)); // espaciado base compacto
+
+  // Fuentes (basadas en W para consistencia portrait/landscape)
+  const nameFontSize = Math.min(42, Math.max(15, Math.round(W * 0.024)));
+  const msgFontSize  = Math.min(72, Math.max(22, Math.round(W * 0.050)));
+  const dateFontSize = Math.min(34, Math.max(13, Math.round(msgFontSize * 0.46)));
+  const lineH        = Math.round(msgFontSize * 1.38); // interlineado compacto
+
+  const maxChars  = Math.max(10, Math.floor(FW / (msgFontSize * 0.56)));
+  const lines     = cleanMsg ? wrapText(cleanMsg, maxChars) : [];
+  const msgBlockH = lines.length * lineH;
+
+  // ── 5. padBottom calculado desde el contenido real ────────────────────────
+  // Suma exacta de cada zona vertical: no hay espacio perdido.
+  const sepZone  = innerPad + ornDSize + innerPad * 0.7;   // arriba + separador + abajo
+  const nameZone = nameFontSize + innerPad * 0.8;           // nombre + gap
+  const msgZone  = msgBlockH > 0 ? msgBlockH + innerPad * 0.6 : 0;
+  const dateZone = dateFontSize + innerPad;                 // fecha + gap inferior
+  const ornZone  = ornPad + ornDSize + Math.round(ornArmLen * 0.6); // ornamentos inferiores
+
+  const padBottom = Math.round(sepZone + nameZone + msgZone + dateZone + ornZone);
+
+  // ── 6. Marco Polaroid ─────────────────────────────────────────────────────
   const framed = await sharp(withVig)
     .extend({
       top:    padTop,
@@ -167,40 +189,23 @@ export async function processPolaroid(
     })
     .toBuffer();
 
-  const FW      = W + padSide * 2;
   const FH      = H + padTop + padBottom;
-  const areaTop = H + padTop; // Y donde empieza el área blanca inferior
-
-  // ── 5. Medidas de los elementos decorativos ───────────────────────────────
-  const ornPad    = Math.max(18, Math.round(padSide * 0.28));
-  const ornDSize  = Math.max(5,  Math.round(padSide * 0.12));
-  const ornArmLen = Math.max(20, Math.round(padSide * 0.58));
-  const innerPad  = Math.max(18, Math.round(W * 0.022));
-
-  // Fuentes (basadas en W para consistencia portrait/landscape)
-  const nameFontSize = Math.min(46, Math.max(17, Math.round(W * 0.026)));
-  const msgFontSize  = Math.min(78, Math.max(24, Math.round(W * 0.052)));
-  const dateFontSize = Math.min(38, Math.max(14, Math.round(msgFontSize * 0.48)));
+  const areaTop = H + padTop;
 
   // Línea separadora: respeta espacio de ornamentos en los extremos
   const lineX1 = ornPad + ornDSize + ornArmLen + ornPad * 0.5;
   const lineX2 = FW - lineX1;
 
-  // ── 6. Posiciones Y en el área inferior ──────────────────────────────────
-  const sepY   = areaTop + innerPad + ornDSize;
-  const nameY  = sepY + innerPad + nameFontSize;
+  // ── 7. Posiciones Y en el área inferior ──────────────────────────────────
+  const sepY      = areaTop + innerPad + ornDSize;
+  const nameY     = Math.round(sepY + innerPad * 0.7 + nameFontSize);
+  const msgStartY = Math.round(nameY + innerPad * 0.8 + msgFontSize * 0.85);
+  // Sin mensaje: la fecha va justo después del nombre sin reservar espacio de msgFontSize
+  const dateY     = cleanMsg
+    ? Math.round(msgStartY + msgBlockH + innerPad * 0.6 + dateFontSize)
+    : Math.round(nameY + innerPad * 0.6 + dateFontSize);
 
-  // Posición Y del mensaje: centrado entre nameY y la zona de fecha
-  const dateY     = FH - ornPad - dateFontSize - innerPad;
-  const lineH     = Math.round(msgFontSize * 1.50);
-  const lines     = cleanMsg
-    ? wrapText(cleanMsg, Math.max(10, Math.floor(FW / (msgFontSize * 0.56))))
-    : [];
-  const msgBlockH = lines.length * lineH;
-  const msgArea   = dateY - (nameY + innerPad) - dateFontSize * 0.5;
-  const msgStartY = nameY + innerPad + (msgArea - msgBlockH) / 2 + msgFontSize * 0.85;
-
-  // ── 7. SVG overlay ────────────────────────────────────────────────────────
+  // ── 8. SVG overlay ────────────────────────────────────────────────────────
 
   // Ornamentos en las 4 esquinas del marco completo
   const corners = [

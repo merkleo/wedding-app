@@ -13,35 +13,48 @@ interface Preview {
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const MAX_DIM    = 1920;   // px — Sharp reduce aún más en el servidor (≤ 1414)
-const JPEG_Q     = 0.88;  // calidad JPEG de salida
-const CHUNK_SIZE = 5;     // fotos por request al servidor
+const MAX_DIM    = 2048;   // px — Sharp reduce aún más en el servidor (≤ 1414)
+const SKIP_SIZE  = 4 * 1024 * 1024; // < 4 MB → no comprimir (ya es pequeño)
+const CHUNK_SIZE = 5;      // fotos por request al servidor
 
 // HEIC/HEIF: solo Safari puede decodificarlos con Canvas API.
 // En Chrome/Firefox los enviamos sin comprimir; Sharp los maneja nativamente.
 const NO_CANVAS = new Set(["image/heic", "image/heif"]);
 
+/** Intenta codificar un Canvas a un formato/calidad dado. Devuelve null si el
+ *  browser no soporta ese formato (e.g. WebP toBlob en browsers muy antiguos). */
+function tryEncode(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) =>
+    canvas.toBlob((b) => resolve(b && b.size > 0 ? b : null), mime, quality)
+  );
+}
+
 // ─── Compresión cliente ───────────────────────────────────────────────────────
 //
-// PROBLEMA: una HEIC de iPhone 12 MP → Sharp la decodifica en ~150 MB de raw.
-// SOLUCIÓN: el browser redimensiona en GPU (Canvas) antes de enviar al servidor.
-//           12 MP, 8 MB → JPEG 1920 px, ~400 KB → el servidor procesa 20× menos.
+// Estrategia de calidad:
+//   1. Fotos pequeñas (< 4 MB) → se envían SIN comprimir (ya están optimizadas)
+//   2. Fotos grandes → se redimensionan en GPU vía Canvas y se codifican como
+//      WebP (no usa bloques DCT como JPEG → menos artefactos al re-codificar en
+//      el servidor). Fallback a JPEG 0.95 si el browser no soporta WebP toBlob.
+//   3. HEIC/HEIF → sin tocar (Sharp los decodifica nativamente en el servidor)
 //
 // { imageOrientation: 'from-image' } aplica la rotación EXIF antes del drawImage,
-// así el JPEG resultante ya tiene los píxeles orientados correctamente y Sharp no
-// necesita releer el EXIF (su .rotate() queda como no-op).
+// así el resultado ya tiene los píxeles orientados y Sharp no necesita releer EXIF.
 //
 async function compressImage(file: File): Promise<File> {
-  // Tipos que Canvas no puede decodificar en todos los browsers → enviar tal cual
+  // HEIC/HEIF: Canvas no los decodifica en Chrome/Firefox → el servidor los maneja
   if (NO_CANVAS.has(file.type)) return file;
+
+  // Fotos pequeñas: sin doble compresión → preservar calidad original
+  if (file.size < SKIP_SIZE) return file;
 
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
     const { width, height } = bitmap;
     const scale = Math.min(1, MAX_DIM / Math.max(width, height));
 
-    // Archivo ya suficientemente pequeño → no comprimir
-    if (scale >= 1 && file.size < 1.5 * 1024 * 1024) {
+    // La foto ya cabe en MAX_DIM y es pequeña → no tocar
+    if (scale >= 1) {
       bitmap.close();
       return file;
     }
@@ -55,21 +68,18 @@ async function compressImage(file: File): Promise<File> {
     canvas.getContext("2d")!.drawImage(bitmap, 0, 0, w, h);
     bitmap.close();
 
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error("toBlob falló"))),
-        "image/jpeg",
-        JPEG_Q
-      )
-    );
+    // Intentar WebP primero (mejor calidad/tamaño, sin artefactos DCT)
+    // Fallback a JPEG 0.95 (alta calidad, mínimos artefactos)
+    const blob = await tryEncode(canvas, "image/webp", 0.92)
+               ?? await tryEncode(canvas, "image/jpeg", 0.95);
 
-    // Si la compresión produce un archivo más grande, usar el original
-    if (blob.size >= file.size) return file;
+    if (!blob || blob.size >= file.size) return file;
 
+    const ext  = blob.type === "image/webp" ? ".webp" : ".jpg";
     return new File(
       [blob],
-      file.name.replace(/\.[^.]+$/, ".jpg"),
-      { type: "image/jpeg" }
+      file.name.replace(/\.[^.]+$/, ext),
+      { type: blob.type }
     );
   } catch {
     return file; // ante cualquier error, el servidor siempre puede manejarlo

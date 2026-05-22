@@ -257,7 +257,7 @@ export async function processPolaroid(
       background: { r: 255, g: 253, b: 248, alpha: 1 },
     })
     .composite([{ input: Buffer.from(svgOverlay), blend: "over" }])
-    .webp({ quality: 82 })
+    .webp({ quality: 87 })   // 82 → 87: mejor calidad, +15% tamaño archivo
     .toBuffer();
 }
 

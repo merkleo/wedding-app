@@ -16,10 +16,6 @@ interface Preview {
 const MAX_DIM    = 2048;  // px — Sharp reduce aún más en el servidor (≤ 1414)
 const CHUNK_SIZE = 5;     // fotos por request al servidor
 
-// HEIC/HEIF: solo Safari puede decodificarlos con Canvas API.
-// En Chrome/Firefox los enviamos sin comprimir; Sharp los maneja nativamente.
-const NO_CANVAS = new Set(["image/heic", "image/heif"]);
-
 /** Intenta codificar un Canvas al formato/calidad dados.
  *  Devuelve null si el browser no soporta ese formato. */
 function tryEncode(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob | null> {
@@ -40,13 +36,13 @@ function tryEncode(canvas: HTMLCanvasElement, mime: string, quality: number): Pr
 //   • { imageOrientation: "from-image" } aplica EXIF antes del draw:
 //     el resultado ya está orientado correctamente, Sharp no necesita releer EXIF
 //
-// Excepciones:
-//   • HEIC/HEIF → sin tocar; Canvas no los decodifica en Chrome/Firefox
-//   • Si WebP toBlob no está soportado → fallback a JPEG 0.95 (alta calidad)
-//   • Si el blob resultante es más grande que el original → se envía el original
+// HEIC/HEIF:
+//   • iOS (Safari / Chrome / Firefox) → todos usan WebKit → createImageBitmap
+//     soporta HEIC → se comprime igual que el resto ✅
+//   • Desktop Chrome/Firefox → createImageBitmap lanza error → catch →
+//     se envía el original (fallback automático, caso muy raro en una boda) ✅
 //
 async function compressImage(file: File): Promise<File> {
-  if (NO_CANVAS.has(file.type)) return file;
 
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });

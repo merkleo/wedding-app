@@ -208,7 +208,8 @@ export default function UploadZone({ onSuccess }: Props) {
         onDragLeave={() => setDragging(false)}
         className={[
           "relative cursor-pointer rounded-2xl border-2 border-dashed p-12",
-          "text-center select-none transition-all duration-300",
+          "text-center select-none transition-[transform,background-color,border-color] duration-300",
+          !uploading && "animate-border-glow",
           dragging
             ? "border-gold bg-gold/10 scale-[1.01]"
             : "border-gold/40 bg-white/40 hover:border-gold hover:bg-gold/5",
@@ -224,7 +225,7 @@ export default function UploadZone({ onSuccess }: Props) {
           onChange={(e: ChangeEvent<HTMLInputElement>) => addFiles(e.target.files)}
         />
         <div className="flex flex-col items-center gap-4">
-          <svg className="w-12 h-12 text-gold/60" fill="none" viewBox="0 0 48 48"
+          <svg className="w-12 h-12 text-gold/60 animate-icon-float" fill="none" viewBox="0 0 48 48"
                stroke="currentColor" strokeWidth={1.2}>
             <path strokeLinecap="round" strokeLinejoin="round"
               d="M6 34l10-12 7 8 5-6 8 10H6zM34 16a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -242,7 +243,11 @@ export default function UploadZone({ onSuccess }: Props) {
       {previews.length > 0 && (
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
           {previews.map((p, i) => (
-            <div key={i} className="relative group aspect-square">
+            <div
+              key={i}
+              className="relative group aspect-square transition-transform duration-200
+                         hover:[transform:perspective(400px)_rotateY(4deg)_scale(1.03)]"
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={p.url} alt=""
                    className="w-full h-full object-cover rounded-xl shadow-sm" />
@@ -282,11 +287,20 @@ export default function UploadZone({ onSuccess }: Props) {
         <button
           onClick={handleUpload}
           disabled={!previews.length || uploading}
-          className="w-full py-4 rounded-xl bg-gold font-playfair text-white text-lg
+          className="relative overflow-hidden w-full py-4 rounded-xl bg-gold font-playfair text-white text-lg
                      tracking-wide transition-all duration-300
                      hover:brightness-110 hover:shadow-lg hover:shadow-gold/25
-                     active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
+                     active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed
+                     group/btn"
         >
+          {/* Shimmer en hover */}
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 -skew-x-12 -translate-x-full
+                       group-hover/btn:translate-x-full
+                       bg-gradient-to-r from-transparent via-white/20 to-transparent
+                       transition-transform duration-700 ease-in-out pointer-events-none"
+          />
           {uploading ? (
             <span className="flex items-center justify-center gap-2 text-base">
               <span className="inline-block w-4 h-4 border-2 border-white/30
@@ -315,7 +329,7 @@ export default function UploadZone({ onSuccess }: Props) {
       {/* Resultado */}
       {status === "ok" && (
         <p className="text-center py-3 rounded-xl bg-emerald-50 text-emerald-700
-                      text-sm font-lato">
+                      text-sm font-lato animate-slide-up-fade">
           ✨ ¡Fotos compartidas! Gracias por ser parte de este momento.
         </p>
       )}

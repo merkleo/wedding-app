@@ -14,10 +14,7 @@
   --font-lato:     var(--lato-font), system-ui, sans-serif;
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
+html { scroll-behavior: smooth; }
 
 body {
   background-color: #FDF8F0;
@@ -25,4 +22,80 @@ body {
     radial-gradient(ellipse at 15% 40%, rgba(232, 180, 184, 0.08) 0%, transparent 60%),
     radial-gradient(ellipse at 85% 15%, rgba(201, 168, 76, 0.06) 0%, transparent 55%),
     radial-gradient(ellipse at 50% 90%, rgba(232, 180, 184, 0.06) 0%, transparent 50%);
+}
+
+/* ── Keyframes ────────────────────────────────────────────────────────────────── */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ring-pulse {
+  0%, 100% { opacity: 0.08; transform: scale(1); }
+  50%       { opacity: 0.22; transform: scale(1.05); }
+}
+
+@keyframes ring-pulse-slow {
+  0%, 100% { opacity: 0.04; transform: scale(1); }
+  50%       { opacity: 0.13; transform: scale(1.07); }
+}
+
+/* Pétalos suben lentamente mientras rotan */
+@keyframes petal-float {
+  0%   { transform: translateY(60px)  rotate(0deg);   opacity: 0; }
+  8%   { opacity: 0.4; }
+  92%  { opacity: 0.4; }
+  100% { transform: translateY(-150px) rotate(210deg); opacity: 0; }
+}
+
+/* Ícono de cámara flota suavemente */
+@keyframes icon-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-7px); }
+}
+
+/* Brillo pulsante en el borde de la drop zone */
+@keyframes border-glow {
+  0%, 100% { box-shadow: 0 0 0px 0px rgba(201, 168, 76, 0.00); }
+  50%       { box-shadow: 0 0 18px 4px rgba(201, 168, 76, 0.13); }
+}
+
+/* Decoraciones giratorias (❖ del divider, estrella del hero) */
+@keyframes slow-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Mensaje de éxito sube con fade */
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Modal entra con scale + fade */
+@keyframes modal-enter {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Clases de animación ──────────────────────────────────────────────────────── */
+
+.animate-fade-in-up      { animation: fade-in-up     0.65s ease-out both; }
+.animate-ring-pulse      { animation: ring-pulse      4s   ease-in-out infinite; }
+.animate-ring-pulse-slow { animation: ring-pulse-slow 6s   ease-in-out infinite; }
+.animate-icon-float      { animation: icon-float      3s   ease-in-out infinite; }
+.animate-border-glow     { animation: border-glow     3s   ease-in-out infinite; }
+.animate-slow-spin       { animation: slow-spin       20s  linear infinite; }
+.animate-slide-up-fade   { animation: slide-up-fade   0.35s ease-out both; }
+.animate-modal-enter     { animation: modal-enter     0.25s ease-out both; }
+
+/* ── Pétalo decorativo ────────────────────────────────────────────────────────── */
+
+.petal {
+  position: absolute;
+  border-radius: 60% 40% 60% 40%;
+  background: rgba(232, 180, 184, 0.52);
+  pointer-events: none;
+  animation: petal-float linear infinite;
 }

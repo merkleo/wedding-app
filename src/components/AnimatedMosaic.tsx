@@ -74,9 +74,11 @@ function preloadImage(src: string, onReady: () => void): () => void {
 function MosaicSlot({
   photo,
   onClick,
+  featured = false,
 }: {
   photo: Photo | null;
   onClick: () => void;
+  featured?: boolean;
 }) {
   const [layerA, setLayerA] = useState<Photo | null>(photo);
   const [layerB, setLayerB] = useState<Photo | null>(null);
@@ -127,7 +129,10 @@ function MosaicSlot({
 
   return (
     <div
-      className="aspect-square relative overflow-hidden rounded-xl bg-cream/60 cursor-pointer group"
+      className={[
+        "relative overflow-hidden rounded-xl bg-cream/60 cursor-pointer group",
+        featured ? "absolute inset-0" : "aspect-square",
+      ].join(" ")}
       onClick={onClick}
     >
       {/* Capa A */}
@@ -242,8 +247,13 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
   return (
     <div ref={mosaicRef}>
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3 mb-7">
-        {slots.map((photo, i) => (
-          <MosaicSlot key={i} photo={photo} onClick={onOpenGallery} />
+        {/* Slot 0 — foto destacada 2×2 */}
+        <div key={0} className="col-span-2 row-span-2 relative">
+          <MosaicSlot photo={slots[0]} onClick={onOpenGallery} featured />
+        </div>
+        {/* Slots 1-11 — cuadrícula normal */}
+        {slots.slice(1).map((photo, i) => (
+          <MosaicSlot key={i + 1} photo={photo} onClick={onOpenGallery} />
         ))}
       </div>
 
@@ -251,6 +261,7 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
         <button
           onClick={onOpenGallery}
           className="
+            relative overflow-hidden group/gallery
             font-lato font-medium text-sm
             px-7 py-2.5 rounded-full
             border border-gold text-gold
@@ -258,6 +269,14 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
             transition-colors duration-200
           "
         >
+          {/* Shimmer en hover */}
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 -skew-x-12 -translate-x-full
+                       group-hover/gallery:translate-x-full
+                       bg-gradient-to-r from-transparent via-gold/25 to-transparent
+                       transition-transform duration-600 ease-in-out pointer-events-none"
+          />
           Ver todas las fotos ({photos.length})
         </button>
       </div>

@@ -22,7 +22,7 @@ function Divider() {
   return (
     <div className="flex items-center justify-center gap-3 my-8">
       <div className="h-px w-20 bg-gradient-to-r from-transparent to-gold/40" />
-      <span className="text-gold/50 text-sm select-none">❖</span>
+      <span className="inline-block animate-slow-spin text-gold/50 text-sm select-none" aria-hidden="true">❖</span>
       <div className="h-px w-20 bg-gradient-to-l from-transparent to-gold/40" />
     </div>
   );

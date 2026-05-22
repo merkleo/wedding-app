@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -33,16 +33,35 @@ function fullUrl(photo: Photo): string {
   return `/api/proxy/${encodeURIComponent(photo.filename)}`;
 }
 
+// ─── Iconos SVG ──────────────────────────────────────────────────────────────
+
+function ChevronLeft() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+    </svg>
+  );
+}
+
+function ChevronRight() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export default function GalleryModal({ photos, isOpen, onClose }: Props) {
-  const [page, setPage] = useState(0);
+  const [page, setPage]               = useState(0);
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  const touchStartX                   = useRef<number | null>(null);
 
   const totalPages = Math.ceil(photos.length / PAGE_SIZE);
   const pagePhotos = photos.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  // Teclado: Escape cierra, flechas navegan en lightbox
+  // ── Teclado: Escape cierra, flechas navegan lightbox ────────────────────
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -64,18 +83,34 @@ export default function GalleryModal({ photos, isOpen, onClose }: Props) {
     return () => document.removeEventListener("keydown", handleKey);
   }, [handleKey]);
 
-  // Bloquear scroll del body cuando el modal está abierto
+  // ── Bloquear scroll del body ─────────────────────────────────────────────
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [isOpen]);
 
-  // Resetear página cuando se abre de nuevo
+  // ── Resetear al reabrir ──────────────────────────────────────────────────
   useEffect(() => {
     if (isOpen) { setPage(0); setLightboxIdx(null); }
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  // ── Swipe touch en lightbox ──────────────────────────────────────────────
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const diff = touchStartX.current - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) {
+      if (diff > 0)
+        setLightboxIdx((i) => (i !== null ? Math.min(i + 1, photos.length - 1) : null));
+      else
+        setLightboxIdx((i) => (i !== null ? Math.max(i - 1, 0) : null));
+    }
+    touchStartX.current = null;
+  };
 
   // ── Lightbox ─────────────────────────────────────────────────────────────
   const LightboxView = () => {
@@ -85,24 +120,29 @@ export default function GalleryModal({ photos, isOpen, onClose }: Props) {
       <div
         className="absolute inset-0 z-20 flex items-center justify-center bg-black/92"
         onClick={() => setLightboxIdx(null)}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
       >
         {/* Flecha izquierda */}
         <button
           aria-label="Foto anterior"
+          disabled={lightboxIdx === 0}
           className="absolute left-3 top-1/2 -translate-y-1/2 z-30
-                     text-white/60 hover:text-white text-5xl leading-none
-                     transition-colors select-none"
+                     w-11 h-11 rounded-full bg-white/12 backdrop-blur-sm
+                     flex items-center justify-center text-white/70 hover:text-white
+                     hover:bg-white/25 transition-all duration-200 select-none
+                     disabled:opacity-20 disabled:cursor-default"
           onClick={(e) => {
             e.stopPropagation();
             setLightboxIdx((i) => (i !== null ? Math.max(i - 1, 0) : null));
           }}
         >
-          ‹
+          <ChevronLeft />
         </button>
 
         {/* Imagen */}
         <div
-          className="relative flex flex-col items-center max-w-5xl mx-12"
+          className="relative flex flex-col items-center max-w-5xl mx-16 select-none"
           onClick={(e) => e.stopPropagation()}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -110,41 +150,45 @@ export default function GalleryModal({ photos, isOpen, onClose }: Props) {
             src={fullUrl(photo)}
             alt={photo.message ?? "Foto de boda"}
             className="max-h-[80vh] max-w-full object-contain rounded-xl shadow-2xl"
+            draggable={false}
           />
           {photo.message && (
-            <p className="mt-3 text-white/80 font-lato text-sm text-center max-w-lg px-2">
+            <p className="mt-4 text-white/80 font-lato text-sm text-center max-w-lg px-4 leading-relaxed">
               {photo.message}
             </p>
           )}
-          <p className="mt-1 text-white/35 font-lato text-xs">
-            {lightboxIdx + 1} / {photos.length}
+          <p className="mt-2 text-white/35 font-lato text-xs tracking-widest">
+            {lightboxIdx + 1} &nbsp;/&nbsp; {photos.length}
           </p>
         </div>
 
         {/* Flecha derecha */}
         <button
           aria-label="Foto siguiente"
+          disabled={lightboxIdx === photos.length - 1}
           className="absolute right-3 top-1/2 -translate-y-1/2 z-30
-                     text-white/60 hover:text-white text-5xl leading-none
-                     transition-colors select-none"
+                     w-11 h-11 rounded-full bg-white/12 backdrop-blur-sm
+                     flex items-center justify-center text-white/70 hover:text-white
+                     hover:bg-white/25 transition-all duration-200 select-none
+                     disabled:opacity-20 disabled:cursor-default"
           onClick={(e) => {
             e.stopPropagation();
-            setLightboxIdx((i) =>
-              i !== null ? Math.min(i + 1, photos.length - 1) : null
-            );
+            setLightboxIdx((i) => (i !== null ? Math.min(i + 1, photos.length - 1) : null));
           }}
         >
-          ›
+          <ChevronRight />
         </button>
 
         {/* Cerrar lightbox */}
         <button
           aria-label="Cerrar"
-          className="absolute top-4 right-4 z-30 text-white/50 hover:text-white
-                     text-3xl leading-none transition-colors"
-          onClick={() => setLightboxIdx(null)}
+          className="absolute top-4 right-4 z-30
+                     w-9 h-9 rounded-full bg-white/10 backdrop-blur-sm
+                     flex items-center justify-center text-white/60 hover:text-white
+                     hover:bg-white/25 transition-all duration-200 text-xl leading-none"
+          onClick={(e) => { e.stopPropagation(); setLightboxIdx(null); }}
         >
-          &times;
+          ×
         </button>
       </div>
     );
@@ -152,8 +196,10 @@ export default function GalleryModal({ photos, isOpen, onClose }: Props) {
 
   // ── Modal principal ───────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(28,20,14,0.97)" }}>
-
+    <div
+      className="fixed inset-0 z-50 flex flex-col animate-modal-enter"
+      style={{ background: "rgba(28,20,14,0.97)" }}
+    >
       {/* Header */}
       <div className="flex-none flex items-center justify-between px-5 py-4 border-b border-gold/20">
         <div>
@@ -167,9 +213,11 @@ export default function GalleryModal({ photos, isOpen, onClose }: Props) {
         <button
           aria-label="Cerrar galería"
           onClick={onClose}
-          className="text-cream/50 hover:text-cream transition-colors text-3xl leading-none"
+          className="w-9 h-9 rounded-full bg-white/8 hover:bg-white/18
+                     flex items-center justify-center text-cream/50 hover:text-cream
+                     transition-all duration-200 text-xl leading-none"
         >
-          &times;
+          ×
         </button>
       </div>
 
@@ -186,7 +234,9 @@ export default function GalleryModal({ photos, isOpen, onClose }: Props) {
               return (
                 <div
                   key={photo.filename}
-                  className="aspect-square relative overflow-hidden rounded-lg cursor-pointer group bg-dark/40"
+                  className="aspect-square relative overflow-hidden rounded-lg cursor-pointer group bg-dark/40
+                             animate-fade-in-up"
+                  style={{ animationDelay: `${Math.min(i * 35, 400)}ms` }}
                   onClick={() => setLightboxIdx(globalIdx)}
                 >
                   <Image

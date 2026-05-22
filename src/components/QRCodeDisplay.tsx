@@ -10,20 +10,22 @@ export default async function QRCodeDisplay({ url }: { url: string }) {
   });
 
   return (
-    <div className="flex flex-col items-center gap-5">
-      {/* Marco ornamental */}
-      <div className="relative p-6 inline-block">
+    <div className="flex flex-col items-center gap-4">
+
+      {/* Marco ornamental — w-fit garantiza que las esquinas envuelvan
+          exactamente el QR, sin expandirse al ancho del contenedor flex */}
+      <div className="relative p-5 w-fit mx-auto">
         {/* Esquinas decorativas */}
-        <div className="absolute top-0 left-0  w-5 h-5 border-t-2 border-l-2 border-gold/60 rounded-tl" />
-        <div className="absolute top-0 right-0 w-5 h-5 border-t-2 border-r-2 border-gold/60 rounded-tr" />
-        <div className="absolute bottom-0 left-0  w-5 h-5 border-b-2 border-l-2 border-gold/60 rounded-bl" />
-        <div className="absolute bottom-0 right-0 w-5 h-5 border-b-2 border-r-2 border-gold/60 rounded-br" />
+        <div className="absolute top-0 left-0   w-5 h-5 border-t-2 border-l-2 border-gold/60" />
+        <div className="absolute top-0 right-0  w-5 h-5 border-t-2 border-r-2 border-gold/60" />
+        <div className="absolute bottom-0 left-0  w-5 h-5 border-b-2 border-l-2 border-gold/60" />
+        <div className="absolute bottom-0 right-0 w-5 h-5 border-b-2 border-r-2 border-gold/60" />
 
         {/* QR */}
         <div
-          className="p-3 bg-cream rounded-xl shadow-inner border border-gold/15"
+          className="p-3 bg-cream rounded-2xl shadow-inner border border-gold/20"
           dangerouslySetInnerHTML={{ __html: svg }}
-          style={{ width: 188, height: 188 }}
+          style={{ width: 180, height: 180 }}
         />
       </div>
 
@@ -33,6 +35,7 @@ export default async function QRCodeDisplay({ url }: { url: string }) {
       <a href={url} className="text-gold text-xs font-lato hover:underline break-all">
         {url}
       </a>
+
     </div>
   );
 }

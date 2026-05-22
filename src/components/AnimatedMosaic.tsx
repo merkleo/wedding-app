@@ -131,8 +131,8 @@ function MosaicSlot({
     <div
       className={[
         "relative overflow-hidden rounded-xl bg-cream/60 cursor-pointer group",
-        featured ? "absolute inset-0" : "aspect-square",
-      ].join(" ")}
+        !featured && "aspect-square",
+      ].filter(Boolean).join(" ")}
       onClick={onClick}
     >
       {/* Capa A */}
@@ -247,8 +247,10 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
   return (
     <div ref={mosaicRef}>
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3 mb-7">
-        {/* Slot 0 — foto destacada 2×2 */}
-        <div key={0} className="col-span-2 row-span-2 relative">
+        {/* Slot 0 — foto destacada 2×2.
+            wrapper display:grid → su único hijo se estira (stretch) para
+            llenar el área completa sin necesitar absolute ni h-full */}
+        <div key={0} className="col-span-2 row-span-2 grid">
           <MosaicSlot photo={slots[0]} onClick={onOpenGallery} featured />
         </div>
         {/* Slots 1-11 — cuadrícula normal */}

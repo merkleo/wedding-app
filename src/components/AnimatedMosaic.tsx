@@ -19,8 +19,50 @@ interface Props {
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 const SLOTS       = 12;
-const INTERVAL_MS = 3_000;   // 1 foto rota cada 3 s
-const FADE_MS     = 2_400;   // crossfade más largo = más suave
+const INTERVAL_MS = 3_000;   // una foto rota cada 3 s
+const FADE_MS     = 2_400;   // crossfade
+
+// ─── Layout editorial sin huecos ─────────────────────────────────────────────
+//
+// Cada entrada: [cols-mobile (grid 3-col), cols-desktop (grid 4-col)]
+//
+// Desktop 4-col (sin huecos):
+//   Fila 1: [2][2]       slots 0,1
+//   Fila 2: [1][2][1]    slots 2,3,4
+//   Fila 3: [2][2]       slots 5,6
+//   Fila 4: [1][2][1]    slots 7,8,9
+//   Fila 5: [2][2]       slots 10,11
+//
+// Mobile 3-col (sin huecos):
+//   Fila 1: [2][1]       slots 0,1
+//   Fila 2: [1][2]       slots 2,3
+//   Fila 3: [2][1]       slots 4,5
+//   Fila 4: [1][2]       slots 6,7
+//   Fila 5: [2][1]       slots 8,9
+//   Fila 6: [1][2]       slots 10,11
+
+const SLOT_SPANS: [number, number][] = [
+  [2, 2], // 0
+  [1, 2], // 1
+  [1, 1], // 2
+  [2, 2], // 3
+  [2, 1], // 4
+  [1, 2], // 5
+  [1, 2], // 6
+  [2, 1], // 7
+  [2, 2], // 8
+  [1, 1], // 9
+  [1, 2], // 10
+  [2, 2], // 11
+];
+
+// Strings completos para que Tailwind no los elimine en el purge
+const SPAN_CLASSES: Record<string, string> = {
+  "1-1": "col-span-1 sm:col-span-1",
+  "1-2": "col-span-1 sm:col-span-2",
+  "2-1": "col-span-2 sm:col-span-1",
+  "2-2": "col-span-2 sm:col-span-2",
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -39,102 +81,81 @@ function pickRandom<T>(arr: T[], n: number): T[] {
   return out;
 }
 
-/**
- * Precarga una imagen en la caché del navegador ANTES de hacer el crossfade.
- * Llama a onReady() cuando la imagen está lista (o ante error, para no bloquear).
- * Devuelve una función de cancelación para el cleanup de useEffect.
- */
 function preloadImage(src: string, onReady: () => void): () => void {
   let cancelled = false;
   let called    = false;
-
-  const once = () => {
-    if (!cancelled && !called) { called = true; onReady(); }
-  };
-
+  const once = () => { if (!cancelled && !called) { called = true; onReady(); } };
   const img    = new window.Image();
   img.onload  = once;
-  img.onerror = once;   // si hay error, seguimos igualmente
+  img.onerror = once;
   img.src      = src;
-
-  // Si ya estaba en caché el navegador la marca complete de forma síncrona
   if (img.complete) once();
-
   return () => { cancelled = true; };
 }
 
-// ─── Slot individual con crossfade A/B ───────────────────────────────────────
-//
-// Dos capas absolutas apiladas. Al recibir una foto nueva:
-//   1. Precargamos la imagen en la caché del navegador.
-//   2. Sólo cuando está lista, la ponemos en la capa INACTIVA (opacity 0).
-//   3. Tras dos animationFrames (imagen ya renderizada), invertimos opacidades
-//      con CSS transition → crossfade real, sin cortes, sin blanco intermedio.
+// ─── Slot con crossfade A/B + Ken Burns ──────────────────────────────────────
 
 function MosaicSlot({
   photo,
   onClick,
-  featured = false,
+  spanClass,
+  panDir,
 }: {
-  photo: Photo | null;
-  onClick: () => void;
-  featured?: boolean;
+  photo:     Photo | null;
+  onClick:   () => void;
+  spanClass: string;
+  panDir:    "down" | "up";
 }) {
   const [layerA, setLayerA] = useState<Photo | null>(photo);
   const [layerB, setLayerB] = useState<Photo | null>(null);
-  const [showB, setShowB]   = useState(false);
-  const activeRef           = useRef<"A" | "B">("A");
-  // Sólo se actualiza cuando el swap realmente ocurre (no antes)
-  const prevFilename        = useRef<string | undefined>(photo?.filename);
+  const [showB,  setShowB]  = useState(false);
+  const activeRef            = useRef<"A" | "B">("A");
+  const prevFilename         = useRef<string | undefined>(photo?.filename);
 
   useEffect(() => {
     if (!photo) return;
     if (photo.filename === prevFilename.current) return;
 
     const src    = thumbUrl(photo);
-    const target = activeRef.current === "A" ? "B" : "A"; // capa inactiva
+    const target = activeRef.current === "A" ? "B" : "A";
 
     const cancel = preloadImage(src, () => {
-      // La imagen ya está en caché → colocarla en la capa inactiva
       prevFilename.current = photo.filename;
-
       if (target === "B") {
         setLayerB(photo);
         requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            setShowB(true);          // B → opacity 1  /  A → opacity 0
-            activeRef.current = "B";
-          })
+          requestAnimationFrame(() => { setShowB(true); activeRef.current = "B"; })
         );
       } else {
         setLayerA(photo);
         requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            setShowB(false);         // A → opacity 1  /  B → opacity 0
-            activeRef.current = "A";
-          })
+          requestAnimationFrame(() => { setShowB(false); activeRef.current = "A"; })
         );
       }
     });
 
-    return cancel; // cancela si el componente se desmonta o cambia la foto
+    return cancel;
   }, [photo]);
 
-  // will-change: opacity → el navegador promueve el elemento a su propia capa
-  // GPU → sin jank en iOS incluso con muchos slots animando a la vez
   const layerStyle = {
     willChange: "opacity",
     transition: `opacity ${FADE_MS}ms ease-in-out`,
   } as const;
 
+  // Barrido vertical alterno — cada slot barre en dirección opuesta al anterior
+  const panClass = panDir === "down" ? "animate-pan-down" : "animate-pan-up";
+
+  // Altura fija para alinear filas: las fotos se estiran horizontalmente
+  // según su col-span sin que el alto de la fila quede descompensado
+  const outerClass = [
+    spanClass,
+    "h-32 sm:h-44",
+    "relative overflow-hidden rounded-xl bg-cream/60 cursor-pointer group",
+  ].join(" ");
+
   return (
-    <div
-      className={[
-        "relative overflow-hidden rounded-xl bg-cream/60 cursor-pointer group",
-        !featured && "aspect-square",
-      ].filter(Boolean).join(" ")}
-      onClick={onClick}
-    >
+    <div className={outerClass} onClick={onClick}>
+
       {/* Capa A */}
       <div className="absolute inset-0" style={{ ...layerStyle, opacity: showB ? 0 : 1 }}>
         {layerA && (
@@ -143,8 +164,8 @@ function MosaicSlot({
             alt={layerA.message ?? "Foto de boda"}
             fill
             loading="eager"
-            className="object-cover group-hover:brightness-110 transition-[filter] duration-300"
-            sizes="(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 20vw"
+            className={`object-cover group-hover:brightness-110 transition-[filter] duration-300 ${panClass}`}
+            sizes="(max-width: 640px) 66vw, 50vw"
             unoptimized
           />
         )}
@@ -158,8 +179,8 @@ function MosaicSlot({
             alt={layerB.message ?? "Foto de boda"}
             fill
             loading="eager"
-            className="object-cover group-hover:brightness-110 transition-[filter] duration-300"
-            sizes="(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 20vw"
+            className={`object-cover group-hover:brightness-110 transition-[filter] duration-300 ${panClass}`}
+            sizes="(max-width: 640px) 66vw, 50vw"
             unoptimized
           />
         )}
@@ -168,16 +189,13 @@ function MosaicSlot({
   );
 }
 
-// ─── Componente principal ────────────────────────────────────────────────────
+// ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
   const [slots, setSlots] = useState<(Photo | null)[]>(() =>
     Array(SLOTS).fill(null)
   );
   const mosaicRef = useRef<HTMLDivElement>(null);
-
-  // pausedRef: true cuando el mosaico está fuera de pantalla o la pestaña inactiva
-  // Usamos ref (no state) para no causar re-renders en el observer
   const pausedRef = useRef(false);
 
   // Poblar slots al recibir las fotos
@@ -187,8 +205,7 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
     setSlots(Array.from({ length: SLOTS }, (_, i) => shuffled[i] ?? null));
   }, [photos]);
 
-  // ── IntersectionObserver: pausar cuando el mosaico sale de pantalla ──────
-  // Ahorra CPU/batería en mobile cuando el usuario sube a la sección de upload
+  // IntersectionObserver — pausar cuando sale de pantalla
   useEffect(() => {
     const el = mosaicRef.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
@@ -200,18 +217,17 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
     return () => observer.disconnect();
   }, []);
 
-  // ── Page Visibility API: pausar cuando la pestaña está en background ──────
-  // Evita que el timer consuma recursos con la app en segundo plano
+  // Page Visibility API — pausar cuando la pestaña está en background
   useEffect(() => {
     const onVisibility = () => { pausedRef.current = document.hidden; };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
-  // ── Rotar 1 slot aleatorio cada INTERVAL_MS ───────────────────────────────
+  // Rotar 1 slot aleatorio cada INTERVAL_MS
   const rotate = useCallback(() => {
-    if (pausedRef.current) return;          // fuera de pantalla o tab inactiva
-    if (photos.length <= SLOTS) return;     // no hay fotos extra para rotar
+    if (pausedRef.current) return;
+    if (photos.length <= SLOTS) return;
 
     setSlots((prev) => {
       const currentNames = new Set(prev.filter(Boolean).map((p) => p!.filename));
@@ -220,8 +236,8 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
 
       const slotIdx  = Math.floor(Math.random() * SLOTS);
       const newPhoto = pool[Math.floor(Math.random() * pool.length)];
-      const next = [...prev];
-      next[slotIdx] = newPhoto;
+      const next     = [...prev];
+      next[slotIdx]  = newPhoto;
       return next;
     });
   }, [photos]);
@@ -232,7 +248,7 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
     return () => clearInterval(timer);
   }, [rotate, photos.length]);
 
-  // ── Sin fotos ─────────────────────────────────────────────────────────────
+  // Sin fotos
   if (!photos.length) {
     return (
       <div className="text-center py-20">
@@ -243,20 +259,22 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
     );
   }
 
-  // ── Mosaico ───────────────────────────────────────────────────────────────
   return (
     <div ref={mosaicRef}>
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3 mb-7">
-        {/* Slot 0 — foto destacada 2×2.
-            wrapper display:grid → su único hijo se estira (stretch) para
-            llenar el área completa sin necesitar absolute ni h-full */}
-        <div key={0} className="col-span-2 row-span-2 grid">
-          <MosaicSlot photo={slots[0]} onClick={onOpenGallery} featured />
-        </div>
-        {/* Slots 1-11 — cuadrícula normal */}
-        {slots.slice(1).map((photo, i) => (
-          <MosaicSlot key={i + 1} photo={photo} onClick={onOpenGallery} />
-        ))}
+        {slots.map((photo, i) => {
+          const [mob, desk] = SLOT_SPANS[i] ?? [1, 1];
+          const spanCls = SPAN_CLASSES[`${mob}-${desk}`] ?? "col-span-1";
+          return (
+            <MosaicSlot
+              key={i}
+              photo={photo}
+              onClick={onOpenGallery}
+              spanClass={spanCls}
+              panDir={i % 2 === 0 ? "down" : "up"}
+            />
+          );
+        })}
       </div>
 
       <div className="text-center">
@@ -271,7 +289,6 @@ export default function AnimatedMosaic({ photos, onOpenGallery }: Props) {
             transition-colors duration-200
           "
         >
-          {/* Shimmer en hover */}
           <span
             aria-hidden="true"
             className="absolute inset-0 -skew-x-12 -translate-x-full

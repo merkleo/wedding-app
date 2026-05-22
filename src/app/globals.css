@@ -67,6 +67,16 @@ body {
   to   { transform: rotate(360deg); }
 }
 
+/* Ken Burns — barre la imagen verticalmente dentro del slot */
+@keyframes pan-down {
+  0%   { object-position: center 20%; }
+  100% { object-position: center 80%; }
+}
+@keyframes pan-up {
+  0%   { object-position: center 80%; }
+  100% { object-position: center 20%; }
+}
+
 /* Mensaje de éxito sube con fade */
 @keyframes slide-up-fade {
   from { opacity: 0; transform: translateY(10px); }
@@ -89,6 +99,9 @@ body {
 .animate-slow-spin       { animation: slow-spin       20s  linear infinite; }
 .animate-slide-up-fade   { animation: slide-up-fade   0.35s ease-out both; }
 .animate-modal-enter     { animation: modal-enter     0.25s ease-out both; }
+/* alternate → invierte suavemente al llegar al final, sin salto */
+.animate-pan-down        { animation: pan-down 18s ease-in-out infinite alternate; }
+.animate-pan-up          { animation: pan-up   18s ease-in-out infinite alternate; }
 
 /* ── Pétalo decorativo ────────────────────────────────────────────────────────── */
 

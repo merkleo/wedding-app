@@ -12,16 +12,19 @@ export default async function QRCodeDisplay({ url }: { url: string }) {
   return (
     <div className="flex flex-col items-center gap-4">
 
-      {/* Marco ornamental — w-fit garantiza que las esquinas envuelvan
-          exactamente el QR, sin expandirse al ancho del contenedor flex */}
-      <div className="relative p-5 w-fit mx-auto">
+      {/* Marco ornamental — ancho y alto fijos para que las esquinas
+          envuelvan exactamente el QR sin depender del flujo flex */}
+      <div
+        className="relative mx-auto flex items-center justify-center"
+        style={{ width: 205, height: 205 }}
+      >
         {/* Esquinas decorativas */}
         <div className="absolute top-0 left-0   w-5 h-5 border-t-2 border-l-2 border-gold/60" />
         <div className="absolute top-0 right-0  w-5 h-5 border-t-2 border-r-2 border-gold/60" />
         <div className="absolute bottom-0 left-0  w-5 h-5 border-b-2 border-l-2 border-gold/60" />
         <div className="absolute bottom-0 right-0 w-5 h-5 border-b-2 border-r-2 border-gold/60" />
 
-        {/* QR */}
+        {/* QR centrado dentro del marco */}
         <div
           className="p-3 bg-cream rounded-2xl shadow-inner border border-gold/20"
           dangerouslySetInnerHTML={{ __html: svg }}

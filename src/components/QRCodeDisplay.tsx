@@ -16,7 +16,7 @@ export default async function QRCodeDisplay({ url }: { url: string }) {
           envuelvan exactamente el QR sin depender del flujo flex */}
       <div
         className="relative mx-auto flex items-center justify-center"
-        style={{ width: 205, height: 205 }}
+        style={{ width: 230, height: 230 }}
       >
         {/* Esquinas decorativas */}
         <div className="absolute top-0 left-0   w-5 h-5 border-t-2 border-l-2 border-gold/60" />
@@ -28,7 +28,7 @@ export default async function QRCodeDisplay({ url }: { url: string }) {
         <div
           className="p-3 bg-cream rounded-2xl shadow-inner border border-gold/20"
           dangerouslySetInnerHTML={{ __html: svg }}
-          style={{ width: 180, height: 180 }}
+          style={{ width: 205, height: 205 }}
         />
       </div>
 

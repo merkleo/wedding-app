@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureFolder, uploadFile, uploadMeta } from "@/lib/nextcloud";
 import { processPolaroid, generateThumbnail } from "@/lib/imageProcessor";
 
-const MAX_INPUT_SIZE  = 50 * 1024 * 1024; // 50 MB (antes de comprimir)
-const MAX_CONCURRENT  = 3;                 // máx archivos procesados en paralelo
-                                           // (evita picos de RAM con uploads masivos)
+const MAX_INPUT_SIZE = 50 * 1024 * 1024; // 50 MB (antes de comprimir)
+
+// Con archivos WebP comprimidos en cliente (~400-700 KB), la RAM por foto es mínima.
+// Subimos a 5 para procesar el chunk entero de una vez sin esperas entre fotos.
+const MAX_CONCURRENT = 5;
+
 const ALLOW_TYPES = new Set([
   "image/jpeg", "image/png", "image/gif",
   "image/webp", "image/heic", "image/heif", "image/avif",
@@ -22,9 +25,7 @@ export async function POST(req: NextRequest) {
 
     await ensureFolder();
 
-    // ── 1. Validación y lectura en memoria (serial, instantáneo) ─────────────
-    // Verificamos tipo y tamaño antes de lanzar ningún procesamiento.
-    // Leer arrayBuffer() es barato porque los datos ya están en la request.
+    // ── 1. Validación y lectura en memoria ────────────────────────────────────
     type ValidFile = { raw: Buffer };
     const valid: ValidFile[] = [];
 
@@ -46,19 +47,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── 2. Procesamiento paralelo con pool de workers ─────────────────────────
+    // ── 2. Worker-pool con uploads desacoplados del procesamiento ─────────────
     //
-    // Patrón worker-pool: MAX_CONCURRENT workers sacan items de la cola hasta
-    // que se vacía. Esto garantiza que NUNCA haya más de MAX_CONCURRENT imágenes
-    // procesándose simultáneamente (control de RAM), mientras maximiza el uso
-    // de CPU (un worker empieza la siguiente foto en cuanto termina la anterior).
+    // PATRÓN ANTERIOR (cuello de botella):
+    //   worker: [⚙️ procesar] → AWAIT [⬆️ subir a NextCloud] → [⚙️ procesar siguiente]
+    //   → CPU inactivo mientras espera la red. Con 3 workers y 5 fotos: ~8 s.
     //
-    // Dentro de cada slot:
-    //   - processPolaroid + generateThumbnail corren en PARALELO (Promise.all)
-    //     → ambas leen el mismo buffer sin dependencia entre sí.
-    //   - Las 3 subidas (polaroid + thumb + meta) también en paralelo.
+    // PATRÓN NUEVO (CPU + red en paralelo):
+    //   worker: [⚙️ procesar] → DISPARA upload sin await → [⚙️ procesar siguiente]
+    //   → los uploads corren en background mientras se procesa la siguiente foto.
+    //   → al final se espera que todos los uploads pendientes terminen.
+    //   Con 5 workers y 5 fotos: ~4 s (todos procesan al mismo tiempo y
+    //   todos los uploads se disparan juntos al terminar el procesamiento).
 
     const uploaded: string[] = [];
+    const pendingUploads: Promise<void>[] = [];
     const queue = [...valid];
 
     const worker = async () => {
@@ -66,7 +69,7 @@ export async function POST(req: NextRequest) {
         const item = queue.shift();
         if (!item) break;
 
-        // Polaroid + thumbnail en paralelo (mayor ganancia individual por archivo)
+        // Polaroid + thumbnail en paralelo (no tienen dependencia entre sí)
         const [processed, thumb] = await Promise.all([
           processPolaroid(item.raw, message || undefined),
           generateThumbnail(item.raw),
@@ -77,21 +80,26 @@ export async function POST(req: NextRequest) {
         const filename      = `${ts}-${rnd}.webp`;
         const thumbFilename = `${ts}-${rnd}.thumb.webp`;
 
-        // Las 3 subidas en paralelo: Polaroid + thumbnail + sidecar de mensaje
-        await Promise.all([
-          uploadFile(filename,      processed, "image/webp"),
-          uploadFile(thumbFilename, thumb,     "image/webp"),
-          message ? uploadMeta(filename, message) : Promise.resolve(),
-        ]);
-
-        uploaded.push(filename);
+        // CLAVE: disparar las 3 subidas a NextCloud SIN await.
+        // El worker pasa inmediatamente a procesar la siguiente foto.
+        // CPU y red trabajan simultáneamente en lugar de secuencialmente.
+        pendingUploads.push(
+          Promise.all([
+            uploadFile(filename,      processed, "image/webp"),
+            uploadFile(thumbFilename, thumb,     "image/webp"),
+            message ? uploadMeta(filename, message) : Promise.resolve(),
+          ]).then(() => { uploaded.push(filename); })
+        );
       }
     };
 
-    // Lanzar MAX_CONCURRENT workers simultáneamente
+    // Lanzar MAX_CONCURRENT workers en paralelo
     await Promise.all(
       Array.from({ length: Math.min(MAX_CONCURRENT, valid.length) }, worker)
     );
+
+    // Esperar que todos los uploads en vuelo terminen antes de responder
+    await Promise.all(pendingUploads);
 
     return NextResponse.json({ success: true, files: uploaded });
   } catch (err) {

@@ -13,8 +13,10 @@ interface Preview {
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const MAX_DIM    = 2048;  // px — Sharp reduce aún más en el servidor (≤ 1414)
-const CHUNK_SIZE = 5;     // fotos por request al servidor
+const MAX_DIM       = 2048; // px — Sharp reduce aún más en el servidor (≤ 1414)
+const CHUNK_SIZE    = 5;    // fotos por request al servidor
+const CHUNK_PARALLEL = 2;   // requests enviados simultáneamente
+                             // (2 chunks × 5 fotos = 10 fotos procesándose a la vez en servidor)
 
 /** Intenta codificar un Canvas al formato/calidad dados.
  *  Devuelve null si el browser no soporta ese formato. */
@@ -133,32 +135,48 @@ export default function UploadZone({ onSuccess }: Props) {
         compressed.push(await compressImage(previews[i].file));
       }
 
-      // ── Fase 2 (50 → 100 %): subida por chunks al servidor ───────────────
-      // En lugar de un solo request enorme, enviamos de CHUNK_SIZE en CHUNK_SIZE.
-      // Beneficios:
-      //   • Evita timeouts de Apache (cada chunk termina en < 30 s)
-      //   • Muestra progreso real foto a foto
-      //   • Si una foto falla, el resto ya está guardado
+      // ── Fase 2 (50 → 100 %): subida por grupos de chunks en paralelo ────────
+      //
+      // Enviamos CHUNK_PARALLEL requests simultáneamente al servidor.
+      // Cada request procesa hasta CHUNK_SIZE fotos con MAX_CONCURRENT=5 workers.
+      // Mientras el servidor sube las fotos del chunk A a NextCloud, ya tiene
+      // el chunk B procesándose → CPU y red nunca esperan la una a la otra.
+      //
+      // Ejemplo para 18 fotos (4 chunks):
+      //   Ronda 1: chunk[0] (fotos 1-5)  ┐ en paralelo → ~4 s
+      //            chunk[1] (fotos 6-10) ┘
+      //   Ronda 2: chunk[2] (fotos 11-15) ┐ en paralelo → ~4 s
+      //            chunk[3] (fotos 16-18) ┘
+      //   Total: ~8 s  vs  ~16 s con chunks secuenciales
+
       let done = 0;
 
+      // Construir array de todos los chunks
+      const chunks: File[][] = [];
       for (let c = 0; c * CHUNK_SIZE < compressed.length; c++) {
-        const slice = compressed.slice(c * CHUNK_SIZE, (c + 1) * CHUNK_SIZE);
-        const from  = done + 1;
-        const to    = done + slice.length;
-        const label = total === 1 ? "foto" : `fotos ${from}–${to} de ${total}`;
-        setProgText(`Subiendo ${label}…`);
+        chunks.push(compressed.slice(c * CHUNK_SIZE, (c + 1) * CHUNK_SIZE));
+      }
+
+      // Enviar en grupos de CHUNK_PARALLEL
+      for (let g = 0; g < chunks.length; g += CHUNK_PARALLEL) {
+        const group = chunks.slice(g, g + CHUNK_PARALLEL);
+        setProgText(`Subiendo… ${done} de ${total} listas`);
         setProgPct(Math.round(50 + (done / total) * 50));
 
-        const form = new FormData();
-        slice.forEach((f) => form.append("files", f));
-        if (message.trim()) form.append("message", message.trim());
+        await Promise.all(group.map(async (slice) => {
+          const form = new FormData();
+          slice.forEach((f) => form.append("files", f));
+          if (message.trim()) form.append("message", message.trim());
 
-        const res  = await fetch("/api/upload", { method: "POST", body: form });
-        const data = await res.json() as { error?: string };
-        if (!res.ok) throw new Error(data.error ?? "Error al subir");
+          const res  = await fetch("/api/upload", { method: "POST", body: form });
+          const data = await res.json() as { error?: string };
+          if (!res.ok) throw new Error(data.error ?? "Error al subir");
 
-        done += slice.length;
-        setProgPct(Math.round(50 + (done / total) * 50));
+          // JS es single-threaded: done += es atómico aquí
+          done += slice.length;
+          setProgPct(Math.round(50 + (done / total) * 50));
+          setProgText(`Subiendo… ${done} de ${total} listas`);
+        }));
       }
 
       // ── Éxito ─────────────────────────────────────────────────────────────

@@ -1,5 +1,10 @@
 import sharp from "sharp";
 
+// Deshabilitar caché interna de Sharp.
+// Las fotos de boda son únicas → la caché nunca genera un hit pero sí consume RAM.
+// Desactivarla reduce la presión sobre el GC durante el procesamiento concurrente.
+sharp.cache(false);
+
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const MAX_SIDE  = 1414; // √2_000_000 ≈ 1414 → máx 2 MP en imágenes cuadradas
 const GOLD      = "#C9A84C";

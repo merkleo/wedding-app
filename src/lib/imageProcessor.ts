@@ -47,10 +47,11 @@ function wrapText(text: string, maxChars: number): string[] {
 }
 
 function formatDate(d: Date): string {
+  const tz = "America/Lima"; // UTC-5, sin DST
   return (
-    d.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" }) +
+    d.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric", timeZone: tz }) +
     "  ·  " +
-    d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+    d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: tz })
   );
 }
 
@@ -147,9 +148,9 @@ export async function processPolaroid(
   const ornArmLen = Math.max(18, Math.round(padSide * 0.55));
   const innerPad  = Math.max(10, Math.round(W * 0.014));
 
-  const nameFontSize = Math.min(42, Math.max(15, Math.round(W * 0.024)));
-  const msgFontSize  = Math.min(72, Math.max(22, Math.round(W * 0.050)));
-  const dateFontSize = Math.min(34, Math.max(13, Math.round(msgFontSize * 0.46)));
+  const nameFontSize = Math.min(54, Math.max(19, Math.round(W * 0.031)));
+  const msgFontSize  = Math.min(92, Math.max(28, Math.round(W * 0.064)));
+  const dateFontSize = Math.min(42, Math.max(16, Math.round(msgFontSize * 0.46)));
   const lineH        = Math.round(msgFontSize * 1.38);
 
   const maxChars  = Math.max(10, Math.floor(FW / (msgFontSize * 0.56)));

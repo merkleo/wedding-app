@@ -13,16 +13,15 @@ interface Preview {
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const MAX_DIM    = 2048;   // px — Sharp reduce aún más en el servidor (≤ 1414)
-const SKIP_SIZE  = 4 * 1024 * 1024; // < 4 MB → no comprimir (ya es pequeño)
-const CHUNK_SIZE = 5;      // fotos por request al servidor
+const MAX_DIM    = 2048;  // px — Sharp reduce aún más en el servidor (≤ 1414)
+const CHUNK_SIZE = 5;     // fotos por request al servidor
 
 // HEIC/HEIF: solo Safari puede decodificarlos con Canvas API.
 // En Chrome/Firefox los enviamos sin comprimir; Sharp los maneja nativamente.
 const NO_CANVAS = new Set(["image/heic", "image/heif"]);
 
-/** Intenta codificar un Canvas a un formato/calidad dado. Devuelve null si el
- *  browser no soporta ese formato (e.g. WebP toBlob en browsers muy antiguos). */
+/** Intenta codificar un Canvas al formato/calidad dados.
+ *  Devuelve null si el browser no soporta ese formato. */
 function tryEncode(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob | null> {
   return new Promise((resolve) =>
     canvas.toBlob((b) => resolve(b && b.size > 0 ? b : null), mime, quality)
@@ -31,35 +30,31 @@ function tryEncode(canvas: HTMLCanvasElement, mime: string, quality: number): Pr
 
 // ─── Compresión cliente ───────────────────────────────────────────────────────
 //
-// Estrategia de calidad:
-//   1. Fotos pequeñas (< 4 MB) → se envían SIN comprimir (ya están optimizadas)
-//   2. Fotos grandes → se redimensionan en GPU vía Canvas y se codifican como
-//      WebP (no usa bloques DCT como JPEG → menos artefactos al re-codificar en
-//      el servidor). Fallback a JPEG 0.95 si el browser no soporta WebP toBlob.
-//   3. HEIC/HEIF → sin tocar (Sharp los decodifica nativamente en el servidor)
+// Pipeline: cualquier formato → WebP 92% (cliente) → servidor → WebP 87% (final)
 //
-// { imageOrientation: 'from-image' } aplica la rotación EXIF antes del drawImage,
-// así el resultado ya tiene los píxeles orientados y Sharp no necesita releer EXIF.
+// Beneficios:
+//   • Una sola codificación lossy significativa (el servidor solo re-codifica
+//     WebP→WebP, mucho menos destructivo que JPEG→JPEG o JPEG→WebP)
+//   • WebP no usa bloques DCT fijos de 8×8 → sin el "efecto cuadrícula" de JPEG
+//   • Archivos 3-4× más pequeños que el original → upload y servidor más rápidos
+//   • { imageOrientation: "from-image" } aplica EXIF antes del draw:
+//     el resultado ya está orientado correctamente, Sharp no necesita releer EXIF
+//
+// Excepciones:
+//   • HEIC/HEIF → sin tocar; Canvas no los decodifica en Chrome/Firefox
+//   • Si WebP toBlob no está soportado → fallback a JPEG 0.95 (alta calidad)
+//   • Si el blob resultante es más grande que el original → se envía el original
 //
 async function compressImage(file: File): Promise<File> {
-  // HEIC/HEIF: Canvas no los decodifica en Chrome/Firefox → el servidor los maneja
   if (NO_CANVAS.has(file.type)) return file;
-
-  // Fotos pequeñas: sin doble compresión → preservar calidad original
-  if (file.size < SKIP_SIZE) return file;
 
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
     const { width, height } = bitmap;
+
+    // Redimensionar solo si supera MAX_DIM; si ya es pequeña se mantiene resolución
     const scale = Math.min(1, MAX_DIM / Math.max(width, height));
-
-    // La foto ya cabe en MAX_DIM y es pequeña → no tocar
-    if (scale >= 1) {
-      bitmap.close();
-      return file;
-    }
-
-    const w = Math.round(width * scale);
+    const w = Math.round(width  * scale);
     const h = Math.round(height * scale);
 
     const canvas = document.createElement("canvas");
@@ -68,14 +63,15 @@ async function compressImage(file: File): Promise<File> {
     canvas.getContext("2d")!.drawImage(bitmap, 0, 0, w, h);
     bitmap.close();
 
-    // Intentar WebP primero (mejor calidad/tamaño, sin artefactos DCT)
-    // Fallback a JPEG 0.95 (alta calidad, mínimos artefactos)
+    // WebP 92% primero; fallback a JPEG 95% para browsers sin soporte WebP toBlob
     const blob = await tryEncode(canvas, "image/webp", 0.92)
                ?? await tryEncode(canvas, "image/jpeg", 0.95);
 
+    // Si el blob es más grande que el original (raro, pero posible en PNGs muy simples)
+    // → enviar el original directamente
     if (!blob || blob.size >= file.size) return file;
 
-    const ext  = blob.type === "image/webp" ? ".webp" : ".jpg";
+    const ext = blob.type === "image/webp" ? ".webp" : ".jpg";
     return new File(
       [blob],
       file.name.replace(/\.[^.]+$/, ext),

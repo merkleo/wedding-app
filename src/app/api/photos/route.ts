@@ -6,9 +6,10 @@ export async function GET() {
     const photos = await listPhotos();
     return NextResponse.json({ photos });
   } catch (err) {
+    // El detalle solo va al log del servidor, nunca al cliente
     console.error("[photos]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Error al cargar fotos" },
+      { error: "Error al cargar las fotos" },
       { status: 500 }
     );
   }

@@ -4,6 +4,14 @@ import { processPolaroid, generateThumbnail } from "@/lib/imageProcessor";
 
 const MAX_INPUT_SIZE = 50 * 1024 * 1024; // 50 MB (antes de comprimir)
 
+// El cliente envía chunks de 5 fotos; 20 da margen holgado y evita que
+// un request malicioso con cientos de archivos agote RAM/CPU del servidor.
+const MAX_FILES_PER_REQUEST = 20;
+
+// Coincide con maxLength={300} del textarea — el límite del cliente es
+// solo UX, este es el que realmente protege.
+const MAX_MESSAGE_LENGTH = 300;
+
 // Con archivos WebP comprimidos en cliente (~400-700 KB), la RAM por foto es mínima.
 // Subimos a 5 para procesar el chunk entero de una vez sin esperas entre fotos.
 const MAX_CONCURRENT = 5;
@@ -17,10 +25,17 @@ export async function POST(req: NextRequest) {
   try {
     const form    = await req.formData();
     const files   = form.getAll("files") as File[];
-    const message = (form.get("message") as string | null)?.trim() ?? "";
+    const message = ((form.get("message") as string | null)?.trim() ?? "")
+      .slice(0, MAX_MESSAGE_LENGTH);
 
     if (!files.length) {
       return NextResponse.json({ error: "No se recibieron archivos" }, { status: 400 });
+    }
+    if (files.length > MAX_FILES_PER_REQUEST) {
+      return NextResponse.json(
+        { error: `Máximo ${MAX_FILES_PER_REQUEST} fotos por envío` },
+        { status: 400 }
+      );
     }
 
     await ensureFolder();
@@ -103,9 +118,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, files: uploaded });
   } catch (err) {
+    // El detalle (URLs internas de NextCloud, respuestas WebDAV) solo va al log
     console.error("[upload]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Error desconocido" },
+      { error: "No se pudieron procesar las fotos. Intenta de nuevo." },
       { status: 500 }
     );
   }

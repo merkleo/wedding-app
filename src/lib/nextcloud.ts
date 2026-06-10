@@ -1,17 +1,31 @@
 import { parseStringPromise } from "xml2js";
+import type { Photo } from "./types";
+
+export type { Photo };
 
 const NC_URL      = () => process.env.NEXTCLOUD_URL!.replace(/\/$/, "");
 const NC_USER     = () => process.env.NEXTCLOUD_USERNAME!;
 const NC_TOKEN    = () => process.env.NEXTCLOUD_APP_TOKEN!;
 const NC_FOLDER   = () => process.env.NEXTCLOUD_FOLDER || "fotos-boda";
 
-export interface Photo {
-  filename: string;
-  thumbFilename?: string;   // {ts}-{rnd}.thumb.webp  (existe si fue subida con thumbnail)
-  uploadedAt: string;
-  message?: string;
-  contentType: string;
-  size: number;
+// ─── Caché de listado ─────────────────────────────────────────────────────────
+//
+// listPhotos() hace 1 PROPFIND + 1 GET por cada foto con dedicatoria (N+1).
+// Con muchos invitados refrescando la galería a la vez, eso multiplica la
+// carga sobre NextCloud. El caché en memoria absorbe esas ráfagas; el upload
+// lo invalida para que las fotos nuevas aparezcan de inmediato.
+
+const CACHE_TTL_MS = 30_000;
+
+type PhotosCache = { data: Photo[]; expires: number };
+
+// Singleton sobre globalThis: en producción Next puede incluir una copia de
+// este módulo en el bundle de cada ruta. Si el caché fuera una variable de
+// módulo, invalidarlo desde /api/upload no afectaría al de /api/photos.
+const g = globalThis as typeof globalThis & { __photosCache?: PhotosCache | null };
+
+export function invalidatePhotosCache(): void {
+  g.__photosCache = null;
 }
 
 function authHeader(): string {
@@ -57,6 +71,10 @@ export async function uploadMeta(photoFilename: string, message: string): Promis
 }
 
 export async function listPhotos(): Promise<Photo[]> {
+  if (g.__photosCache && Date.now() < g.__photosCache.expires) {
+    return g.__photosCache.data;
+  }
+
   const res = await fetch(davUrl(), {
     method: "PROPFIND",
     headers: {
@@ -120,7 +138,7 @@ export async function listPhotos(): Promise<Photo[]> {
   );
 
   // Enrich each photo with thumbnail + optional meta
-  return Promise.all(
+  const enriched = await Promise.all(
     imageFiles.map(async (photo) => {
       // Thumbnail companion: {ts}-{rnd}.thumb.webp
       const thumbName    = photo.filename.replace(/\.webp$/i, ".thumb.webp");
@@ -146,6 +164,9 @@ export async function listPhotos(): Promise<Photo[]> {
       return { ...photo, thumbFilename };
     })
   );
+
+  g.__photosCache = { data: enriched, expires: Date.now() + CACHE_TTL_MS };
+  return enriched;
 }
 
 export async function streamFile(filename: string): Promise<{

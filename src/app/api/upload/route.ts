@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureFolder, uploadFile, uploadMeta } from "@/lib/nextcloud";
+import { ensureFolder, uploadFile, uploadMeta, invalidatePhotosCache } from "@/lib/nextcloud";
 import { processPolaroid, generateThumbnail } from "@/lib/imageProcessor";
 
 const MAX_INPUT_SIZE = 50 * 1024 * 1024; // 50 MB (antes de comprimir)
@@ -115,6 +115,9 @@ export async function POST(req: NextRequest) {
 
     // Esperar que todos los uploads en vuelo terminen antes de responder
     await Promise.all(pendingUploads);
+
+    // Las fotos nuevas deben aparecer de inmediato en el próximo listado
+    invalidatePhotosCache();
 
     return NextResponse.json({ success: true, files: uploaded });
   } catch (err) {

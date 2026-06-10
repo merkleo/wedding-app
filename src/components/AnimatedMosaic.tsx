@@ -2,14 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
-
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-
-interface Photo {
-  filename: string;
-  thumbFilename?: string;
-  message?: string;
-}
+import type { Photo } from "@/lib/types";
 
 interface Props {
   photos: Photo[];

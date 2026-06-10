@@ -4,17 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import UploadZone from "./UploadZone";
 import AnimatedMosaic from "./AnimatedMosaic";
 import GalleryModal from "./GalleryModal";
-
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-
-interface Photo {
-  filename: string;
-  thumbFilename?: string;
-  uploadedAt: string;
-  message?: string;
-  contentType: string;
-  size: number;
-}
+import type { Photo } from "@/lib/types";
 
 // ─── Helpers visuales ─────────────────────────────────────────────────────────
 
